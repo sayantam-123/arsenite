@@ -40,27 +40,50 @@ struct FunctionDefinition {
     std::vector<Statement> statements;
 };
 
-// proc main(argc: u64, argv: []string) {}
+enum Operation {
+    Op_Plus,
+    Op_Minus,
+    Op_Mul,
+    Op_Div,
+    Op_Mod,
+};
 
-// bool parse_function_definition(Lexer& l, FunctionDefinition& dest)
-// {
-//     FunctionDefinition f{};
-//     Token t{};
-// 
-//     if (!lexer_expect(l, Tok_proc))
-//         return false;
-// 
-//     if (!lexer_expect_and_get(l, Tok_Identifier, t))
-//         return false;
-//     f.name = t.literal;
-// 
-//     if (!lexer_expect(l, Tok_LParen))
-//         return false;
-// 
-// 
-//     if (!lexer_expect(l, Tok_RParen))
-//         return false;
-// }
+enum ExprKind {
+    Expr_Atom,
+    Expr_Operator,
+};
+
+struct Expr {
+    ExprKind kind;
+    union {
+        Token t; // (This is temporary) Expr_Atom
+        struct {     // Expr_Operator
+            Operation op;
+            Expr *left;
+            Expr *right;
+        };
+    };
+};
+
+Expr *make_op(Expr *left, Expr *right, Operation op)
+{
+    Expr *e = new Expr();
+
+    e->kind = Expr_Operator;
+    e->op = op;
+    e->left = left;
+    e->right = right;
+
+    return e;
+}
+
+std::unordered_map<Operation, int> precedence_table = {
+    {Op_Plus,  1},
+    {Op_Minus, 1},
+    {Op_Mul,   2},
+    {Op_Div,   2},
+    {Op_Mod,   2},
+};
 
 int main() {
 

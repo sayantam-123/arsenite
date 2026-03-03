@@ -1,9 +1,9 @@
 .PHONY: clean all
 
-all: main
+all: parser
 
-main: main.cpp
-	g++ -Wall -Wextra -ggdb parser.cpp -o parser -I./
+parser: parser.cpp lexer.h lexer.cpp
+	g++ -Wall -Wextra -Wswitch -ggdb parser.cpp -o parser -I./
 
 clean:
-	rm -rf main
+	rm -rf parser
