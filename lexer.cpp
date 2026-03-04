@@ -208,6 +208,7 @@ Lexer lexer_lex_file(const std::string& text) {
                 case '*': tokens.push_back(Token(Tok_Star,"*")); break;
                 case '/': tokens.push_back(Token(Tok_FSlash,"/")); break;
                 case '!': tokens.push_back(Token(Tok_Exclam,"!")); break;
+                case '%': tokens.push_back(Token(Tok_Percentage, "%")); break;
                 default: break;
             }
 
@@ -235,8 +236,13 @@ Token lexer_current(Lexer& l)
     return t;
 }
 
-void lexer_move_next(Lexer& l)
+Token lexer_next(Lexer& l)
 {
-    if (!lexer_is_eof(l))
-        l.current += 1;
+    Token t = Token(Tok_EndOfFile, "");
+    l.current += 1;
+    if (!lexer_is_eof(l)) {
+        t = l.tokens[l.current];
+    }
+
+    return t;
 }

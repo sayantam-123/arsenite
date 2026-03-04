@@ -91,7 +91,7 @@ struct Lexer {
 // bool lexer_next(Lexer& l, Token& dest);
 bool  lexer_is_eof(Lexer& l);
 Token lexer_current(Lexer& l);
-void  lexer_move_next(Lexer& l);
+Token  lexer_next(Lexer& l);
 Lexer lexer_lex_file(const std::string& text);
 void  lexer_print_token(Token t);
 
