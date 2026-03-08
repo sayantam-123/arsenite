@@ -1,47 +1,42 @@
+#include <cstdarg>
 #include <cstdio>
 #include <iostream>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <cstdio>
-
+#include <cstdint>
+#include <vector>
 #include "lexer.h"
 
 #include "lexer.cpp"
 
 
 // default types
-enum Type {
-    Type_u8,
-    Type_u16,
-    Type_u32,
-    Type_u64,
-    Type_i8,
-    Type_i16,
-    Type_i32,
-    Type_i64,
-    Type_f32,
-    Type_f64,
-    Type_char8,
-    Type_char16,
-    Type_char32,
-    Type_string,
-};
 
-struct Parameter {
-    std::string name;
-    Type type;
-};
+
 
 struct Statement {
     int a;
 };
 
-struct FunctionDefinition {
-    std::vector<Parameter> parameters;
-    Type return_type;
-    std::string name;
-    std::vector<Statement> statements;
+enum DefaultTypes {
+    DefaultType_Unknown = 0,
+    DefaultType_u8,
+    DefaultType_u16,
+    DefaultType_u32,
+    DefaultType_u64,
+    DefaultType_i8,
+    DefaultType_i16,
+    DefaultType_i32,
+    DefaultType_i64,
+    DefaultType_f32,
+    DefaultType_f64,
+    DefaultType_char8,
+    DefaultType_char16,
+    DefaultType_char32,
+    DefaultTypeCount,
 };
 
 enum Operator {
@@ -68,7 +63,42 @@ enum OpAss {
 enum ExprKind {
     Expr_Atom,
     Expr_Operator,
+    Expr_FuncCall,
+    Expr_ArrIndex,
 };
+
+enum AtomKind {
+    Atom_Variable,
+    Atom_Constant,
+};
+
+
+struct Type {
+    uint64_t type_id;
+    std::vector<uint64_t> arr_size;
+};
+
+#define TYPE_UNKNOWN (Type {.type_id = DefaultType_Unkown, .arr_size{}})
+
+struct Atom {
+    AtomKind kind;
+    std::string value;
+    Type type;
+};
+
+
+struct Expr;
+
+struct FuncCall {
+    std::string name;
+    std::vector<Expr*> args;
+};
+
+struct ArrIndex {
+    std::string name;
+    std::vector<Expr*> args;
+};
+
 
 // a[] <- postfix unary
 // *a  <- prefix unary
@@ -80,20 +110,29 @@ enum ExprKind {
 struct Expr {
     ExprKind kind;
     union {
-        Token t;            // Expr_Atom
+        Atom at;            // Expr_Atom
         struct {            // Expr_Operator
             Operator op;
             Expr *left;
             Expr *middle;   // use in case of ternery operators
             Expr *right;
         };
+        FuncCall func_call; // Expr_FuncCall
+        ArrIndex arr_index; //Expr for array indexing
+
     };
 
-    Expr(Token t)
-         : kind(Expr_Atom), t(t) {}
+    Expr (ArrIndex ar)
+            :kind(Expr_ArrIndex), arr_index(ar){}
 
-    Expr(Expr *left, Expr *right, Operator op)
-         : kind(Expr_Operator), op(op), left(left), right(right) {}
+    Expr (FuncCall fn)
+            : kind(Expr_FuncCall), func_call(fn){}
+
+    Expr (Atom at)
+          : kind(Expr_Atom), at(at) {}
+
+    Expr (Expr *left, Expr *right, Operator op)
+          : kind(Expr_Operator), op(op), left(left), right(right) {}
 };
 
 Expr* parse_primary(Lexer& l);
@@ -159,10 +198,15 @@ Expr* parse_expression(Lexer& l, int min_prec){
 
 void pretty_print_expr(Expr *root, const std::string& prefix, const std::string& prefix_to_pass)
 {
+    if (root == nullptr) {          // ✓ add this guard
+        std::printf("%s<null>\n", prefix.c_str());              //This is fuckass
+        return;
+    }
+
     std::printf("%s", prefix.c_str());
     switch (root->kind) {
         case Expr_Atom:
-            std::printf("Atom: %s\n", root->t.literal.c_str());
+            std::printf("Atom: %s\n", root->at.value.c_str());
             break;
         case Expr_Operator:
             std::printf("Operator: %s\n", op_string[root->op].c_str());
@@ -171,16 +215,87 @@ void pretty_print_expr(Expr *root, const std::string& prefix, const std::string&
             // pretty_print_expr(root->left, prefix_to_pass + "|-- ", prefix_to_pass + "|   ");
             // pretty_print_expr(root->right, prefix_to_pass + "\\-- ", prefix_to_pass + "    ");
             break;
+        case Expr_FuncCall:
+            std::cout<<"name: "<<root->func_call.name<<std::endl;
+            break;
+        case Expr_ArrIndex:
+            std::cout<<"arr_name "<<root->arr_index.name<<std::endl;
+            break;
+
     }
 }
+Expr* parse_function_call(Lexer& l, std::string val);
+Expr* parse_arr_index(Lexer& l, std::string name, std::vector<Expr*>& indexes);
 
 Expr* parse_primary(Lexer& l){
     Expr *e = nullptr;
     switch (lexer_current(l).kind) {
-        case Tok_Identifier:
-        case Tok_Number:
-            e = new Expr(lexer_current(l));
+
+        case Tok_Minus:
+        {
+            lexer_next(l);
+
+            Expr* Operand = parse_expression(l, 999);
+
+            FuncCall fn;
+            fn.name = "_minus";
+            fn.args.push_back(Operand);
+
+
+            e = new Expr(fn);
+
             break;
+
+        }
+        case Tok_Exclam:
+        {
+            lexer_next(l);
+
+            Expr* Operand = parse_expression(l, 999);
+
+            FuncCall fn;
+            fn.name = "_negate";
+            fn.args.push_back(Operand);
+
+
+            e = new Expr(fn);
+
+            break;
+
+        }
+
+        case Tok_Identifier:
+        {
+            Token t = lexer_current(l);
+            Token p = lexer_next(l);
+
+            if(p.kind == Tok_LParen){
+                e = parse_function_call(l, t.literal);
+                break;
+            }
+            else if (p.kind == Tok_LBracket) {
+
+                std::vector<Expr*> ep;
+                e = parse_arr_index(l,t.literal,ep);
+                break;
+            }
+            else{
+
+                Atom a {.kind = Atom_Variable, .value = t.literal, .type {.type_id = DefaultType_Unknown}};
+                e = new Expr(a);
+                break;
+            }
+
+        }
+        case Tok_Number:
+        {
+            //To do later
+            Atom a {.kind = Atom_Constant, .value = lexer_current(l).literal, .type {.type_id = DefaultType_Unknown}};
+            e = new Expr(a);
+            lexer_next(l);
+            break;
+
+        }
         case Tok_LParen:
             lexer_next(l);
             e = parse_expression(l, 0);
@@ -193,10 +308,87 @@ Expr* parse_primary(Lexer& l){
             break;
         default:
             std::cout << "Bleh Bleh Bleh Bluh Bluh Bluh\n";
+            lexer_next(l);
+    }
+
+
+    return e;
+}
+
+Expr* parse_arr_index(Lexer& l, std::string name, std::vector<Expr*>& indexes){
+    Token p = lexer_current(l);
+    if(p.kind != Tok_LBracket){
+        std::cout<<"no L brace give"<<std::endl;
     }
     lexer_next(l);
 
-    return e;
+    if(lexer_current(l).kind == Tok_RBracket)
+        std::cout<<"Expected expression inside the thing"<<std::endl;
+    Expr* e = nullptr;
+
+    e = parse_expression(l, 0);
+
+
+    if(lexer_current(l).kind != Tok_RBracket){
+        std::cout<<"Plugh plugh expected ] "<<std::endl;
+    }
+
+    indexes.push_back(e);
+
+    if(lexer_next(l).kind == Tok_LBracket){
+        parse_arr_index(l,name, indexes);
+    }
+
+    ArrIndex ar = ArrIndex{.name = name, .args = indexes};
+
+    Expr* arr = new Expr(ar);
+
+
+    return arr;
+
+
+}
+
+
+Expr* parse_function_call(Lexer& l, std::string val){
+
+
+
+    Token p = lexer_current(l);
+    if(p.kind != Tok_LParen){
+        std::cout<<"fah FAH"<<std::endl;
+    }
+    lexer_next(l);
+
+    std::vector<Expr*> argss;
+
+    if(lexer_current(l).kind != Tok_RParen){
+
+        while(true){
+            argss.push_back(parse_expression(l,0));
+
+            if(lexer_current(l).kind == Tok_Comma){
+                lexer_next(l);
+            }else{
+                break;
+            }
+
+        }
+
+    }
+
+    Token close = lexer_current(l);
+    if(close.kind != Tok_RParen){
+        printf("Expected rparen" );
+    }
+
+    FuncCall fn = FuncCall{.name = val, .args = argss};
+
+    Expr* ep = new Expr(fn);
+
+    lexer_next(l);
+
+    return ep;
 }
 
 
